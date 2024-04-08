@@ -835,12 +835,6 @@ ifdef CONFIG_DEBUG_INFO_DWARF4
 KBUILD_CFLAGS	+= $(call cc-option, -gdwarf-4,)
 endif
 
-ifdef CONFIG_CFP
-#CFP_CC		?= $(srctree)/../../vendor/qcom/proprietary/llvm-arm-toolchain-ship/8.0/bin/clang
-CFP_CC		= $(srctree)/toolchain/llvm-arm-toolchain-ship/8.0/bin/clang
-CC		= $(srctree)/scripts/gcc-wrapper.py $(CFP_CC)
-endif
-
 ifdef CONFIG_CFP_JOPP
 # Don't use jump tables for switch statements, since this generates indirect jump (br)
 # instructions, which are very dangerous for kernel control flow integrity.
