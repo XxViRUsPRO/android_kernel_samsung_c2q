@@ -228,6 +228,15 @@ static int cnss_wlfw_host_cap_send_sync(struct cnss_plat_data *plat_priv)
 	req->cal_done = plat_priv->cal_done;
 	cnss_pr_dbg("Calibration done is %d\n", plat_priv->cal_done);
 
+	if (plat_priv->cal_duration != CNSS_INVALID_CAL_DURATION) {
+		req->cal_duration_valid = 1;
+		req->cal_duration = plat_priv->cal_duration;
+		cnss_pr_dbg("Calibration duration: %u",
+			    plat_priv->cal_duration);
+	} else {
+		cnss_pr_dbg("Calibration duration not valid");
+	}
+
 	if (!cnss_bus_get_iova(plat_priv, &iova_start, &iova_size) &&
 	    !cnss_bus_get_iova_ipa(plat_priv, &iova_ipa_start,
 				   &iova_ipa_size)) {
@@ -500,6 +509,7 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_SEC_CNSS2
 #ifdef CONFIG_SEC_SEPARATE_BDFILE
 static unsigned int system_rev __read_mostly;
 static int __init sec_hw_rev_setup(char *p)
@@ -518,6 +528,8 @@ static int __init sec_hw_rev_setup(char *p)
 early_param("androidboot.revision", sec_hw_rev_setup);
 
 #endif
+extern int ant_from_macloader;
+#endif
 
 static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 				  u32 bdf_type, char *filename,
@@ -528,6 +540,37 @@ static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 
 	switch (bdf_type) {
 	case CNSS_BDF_ELF:
+#ifdef CONFIG_SEC_CNSS2
+		if (plat_priv->board_info.board_id == 0xFF)
+			if (ant_from_macloader == 1 || ant_from_macloader == 2) {
+				snprintf(filename_tmp, filename_len, ELF_BDF_FILE_NAME "%d",
+					ant_from_macloader);
+			} else
+				snprintf(filename_tmp, filename_len, ELF_BDF_FILE_NAME);
+		else if (plat_priv->board_info.board_id < 0xFF)
+			if (ant_from_macloader == 1 || ant_from_macloader == 2) {
+				snprintf(filename_tmp, filename_len,
+					 ELF_BDF_FILE_NAME_PREFIX "%02x%d",
+					 plat_priv->board_info.board_id, ant_from_macloader);
+			} else
+				snprintf(filename_tmp, filename_len,
+					 ELF_BDF_FILE_NAME_PREFIX "%02x",
+					 plat_priv->board_info.board_id);
+		else
+			snprintf(filename_tmp, filename_len,
+				 BDF_FILE_NAME_PREFIX "%02x.e%02x",
+				 plat_priv->board_info.board_id >> 8 & 0xFF,
+				 plat_priv->board_info.board_id & 0xFF);
+
+#ifdef CONFIG_SEC_SEPARATE_BDFILE
+	cnss_pr_info("%s: system_rev : %d ", __func__, system_rev);
+	if (system_rev < 2)
+		strcat(filename_tmp, "_old");
+
+	cnss_pr_info("%s: new BDF file by REV (w/ or w/o FEM): %s ", __func__, filename);
+#endif
+
+#else
 		/* Board ID will be equal or less than 0xFF in GF mask case */
 		if (plat_priv->board_info.board_id == 0xFF) {
 			if (plat_priv->chip_info.chip_id & CHIP_ID_GF_MASK)
@@ -551,13 +594,6 @@ static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 				 plat_priv->board_info.board_id >> 8 & 0xFF,
 				 plat_priv->board_info.board_id & 0xFF);
 		}
-
-#ifdef CONFIG_SEC_SEPARATE_BDFILE
-	cnss_pr_info("%s: system_rev : %d ", __func__, system_rev);
-	if (system_rev < 2)
-		strcat(filename_tmp, "_old");
-
-	cnss_pr_info("%s: new BDF file by REV (w/ or w/o FEM): %s ", __func__, filename);
 #endif
 		break;
 	case CNSS_BDF_BIN:
@@ -634,7 +670,11 @@ int cnss_wlfw_bdf_dnld_send_sync(struct cnss_plat_data *plat_priv,
 				     filename, sizeof(filename));
 	if (ret > 0) {
 		temp = DUMMY_BDF_FILE_NAME;
+#ifdef CONFIG_SEC_CNSS2
+		remaining = MAX_FIRMWARE_NAME_LEN;
+#else
 		remaining = strlen(DUMMY_BDF_FILE_NAME) + 1;
+#endif
 		goto bypass_bdf;
 	} else if (ret < 0) {
 		goto err_req_fw;
@@ -1869,7 +1909,12 @@ static void cnss_wlfw_request_mem_ind_cb(struct qmi_handle *qmi_wlfw,
 			    ind_msg->mem_seg[i].size, ind_msg->mem_seg[i].type);
 		plat_priv->fw_mem[i].type = ind_msg->mem_seg[i].type;
 		plat_priv->fw_mem[i].size = ind_msg->mem_seg[i].size;
+#ifdef CONFIG_SEC_CNSS2
+		if (!plat_priv->fw_mem[i].va &&
+		    plat_priv->fw_mem[i].type == CNSS_MEM_TYPE_DDR)
+#else
 		if (plat_priv->fw_mem[i].type == CNSS_MEM_TYPE_DDR)
+#endif
 			plat_priv->fw_mem[i].attrs |=
 				DMA_ATTR_FORCE_CONTIGUOUS;
 	}
